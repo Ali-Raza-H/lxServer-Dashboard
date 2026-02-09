@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Homelab Control Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body class="page">
+    <header class="topbar">
+      <div class="topbar__left">
+        <div class="brand">Homelab Dashboard</div>
+        <div id="sysSummary" class="sys-summary muted">Loading system stats…</div>
+      </div>
+      <div class="topbar__right">
+        <button id="refreshBtn" class="btn">Refresh</button>
+        <button id="logoutBtn" class="btn btn--danger">Logout</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="projects">
+        <div class="section-title">
+          <h2>Projects</h2>
+          <div class="muted" id="projectsMeta"></div>
+        </div>
+        <div id="projectsGrid" class="grid"></div>
+      </section>
+
+      <aside class="side">
+        <div class="panel">
+          <div class="panel__head">
+            <h3>Output</h3>
+            <div class="muted" id="outputMeta"></div>
+          </div>
+          <pre id="outputPre" class="pre"></pre>
+        </div>
+
+        <div class="panel">
+          <div class="panel__head">
+            <h3>Logs</h3>
+            <div class="log-actions">
+              <button id="logsTailBtn" class="btn btn--small">Tail</button>
+              <button id="logsLiveBtn" class="btn btn--small">Live</button>
+              <button id="logsStopBtn" class="btn btn--small btn--danger" disabled>Stop</button>
+            </div>
+          </div>
+          <div class="muted" id="logsMeta">Select a project to view logs.</div>
+          <pre id="logsPre" class="pre pre--logs"></pre>
+        </div>
+      </aside>
+    </main>
+  </body>
+</html>
+

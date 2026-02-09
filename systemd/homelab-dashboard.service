@@ -1,0 +1,24 @@
+[Unit]
+Description=Homelab Control Dashboard
+After=network.target
+
+[Service]
+Type=simple
+
+# Change this to your Linux username
+User=YOUR_LINUX_USER
+
+# Point this at your cloned repo path (backend folder)
+WorkingDirectory=/home/YOUR_LINUX_USER/Desktop/Devs/homelab-dashboard/backend
+
+# Put a real .env here (you can start from backend/.env.example)
+EnvironmentFile=/home/YOUR_LINUX_USER/Desktop/Devs/homelab-dashboard/backend/.env
+
+ExecStart=/home/YOUR_LINUX_USER/Desktop/Devs/homelab-dashboard/backend/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+

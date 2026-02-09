@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Homelab Dashboard - Login</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/login.js" defer></script>
+  </head>
+  <body class="page page--auth">
+    <div class="auth-wrap">
+      <div class="card auth-card">
+        <h1 class="brand">Homelab Dashboard</h1>
+        <p class="muted">Sign in to your dashboard.</p>
+
+        <form id="loginForm" class="form">
+          <label class="label">
+            <span>Username</span>
+            <input id="username" name="username" autocomplete="username" required />
+          </label>
+
+          <label class="label">
+            <span>Password</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+
+          <button id="loginBtn" class="btn btn--primary" type="submit">Log in</button>
+          <div id="error" class="error" role="alert" hidden></div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>
+
