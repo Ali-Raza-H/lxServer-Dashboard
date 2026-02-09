@@ -4,7 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Homelab Control Dashboard</title>
+    <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
     <link rel="stylesheet" href="/styles.css" />
+    <script src="/vendor/xterm/xterm.min.js" defer></script>
+    <script src="/vendor/xterm/xterm-addon-fit.min.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body class="page">
@@ -49,8 +52,19 @@
           <div class="muted" id="logsMeta">Select a project to view logs.</div>
           <pre id="logsPre" class="pre pre--logs"></pre>
         </div>
+
+        <div class="panel">
+          <div class="panel__head">
+            <h3>Terminal</h3>
+            <div class="log-actions">
+              <button id="termConnectBtn" class="btn btn--small">Connect</button>
+              <button id="termDisconnectBtn" class="btn btn--small btn--danger" disabled>Disconnect</button>
+            </div>
+          </div>
+          <div class="muted" id="termMeta">Terminal is disabled.</div>
+          <div id="termContainer" class="terminal"></div>
+        </div>
       </aside>
     </main>
   </body>
 </html>
-

@@ -16,6 +16,8 @@ from app.logs import ws_router as logs_ws_router
 from app.models import AuthDB, HealthResponse
 from app.projects import router as projects_router
 from app.system_stats import router as system_router
+from app.terminal import router as terminal_router
+from app.terminal import ws_router as terminal_ws_router
 
 
 def create_app() -> FastAPI:
@@ -51,6 +53,8 @@ def create_app() -> FastAPI:
     app.include_router(logs_router)
     app.include_router(system_router)
     app.include_router(logs_ws_router)
+    app.include_router(terminal_router)
+    app.include_router(terminal_ws_router)
 
     app.mount("/", StaticFiles(directory=str(frontend_dir), html=False), name="frontend")
     return app

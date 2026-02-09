@@ -1,5 +1,14 @@
 let selectedProjectId = null;
 let logsSocket = null;
+let terminalSocket = null;
+let terminalEnabled = false;
+let terminalSupported = false;
+let term = null;
+let fitAddon = null;
+let termConnectedProjectId = null;
+let termResizeTimer = null;
+const termDecoder = new TextDecoder();
+const termEncoder = new TextEncoder();
 
 async function apiFetch(path, options = {}) {
   const opts = {
@@ -63,6 +72,164 @@ function wsUrl(path) {
   return `${proto}//${window.location.host}${path}`;
 }
 
+function setTermMeta(text) {
+  document.getElementById("termMeta").textContent = text || "";
+}
+
+function updateTerminalButtons() {
+  const connectBtn = document.getElementById("termConnectBtn");
+  const disconnectBtn = document.getElementById("termDisconnectBtn");
+
+  if (!terminalSupported) {
+    connectBtn.disabled = true;
+    disconnectBtn.disabled = true;
+    return;
+  }
+  if (!terminalEnabled) {
+    connectBtn.disabled = true;
+    disconnectBtn.disabled = true;
+    return;
+  }
+
+  connectBtn.disabled = !selectedProjectId || !!terminalSocket;
+  disconnectBtn.disabled = !terminalSocket;
+}
+
+function ensureXterm() {
+  if (term) return term;
+  if (typeof window.Terminal !== "function") {
+    setTermMeta("Terminal UI failed to load (xterm.js missing).");
+    return null;
+  }
+
+  const container = document.getElementById("termContainer");
+  container.innerHTML = "";
+
+  term = new window.Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    scrollback: 2000,
+    theme: { background: "rgba(0,0,0,0)" },
+  });
+
+  if (window.FitAddon?.FitAddon) {
+    fitAddon = new window.FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+  }
+
+  term.open(container);
+  fitAddon?.fit?.();
+
+  term.onData((data) => {
+    if (!terminalSocket || terminalSocket.readyState !== WebSocket.OPEN) return;
+    if (!data) return;
+    terminalSocket.send(termEncoder.encode(data));
+  });
+
+  return term;
+}
+
+function sendTerminalResize() {
+  if (!terminalSocket || terminalSocket.readyState !== WebSocket.OPEN) return;
+  if (!term) return;
+  fitAddon?.fit?.();
+  terminalSocket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+}
+
+function scheduleTerminalResize() {
+  if (termResizeTimer) window.clearTimeout(termResizeTimer);
+  termResizeTimer = window.setTimeout(() => {
+    sendTerminalResize();
+  }, 80);
+}
+
+function disconnectTerminal() {
+  if (terminalSocket) {
+    terminalSocket.close();
+    terminalSocket = null;
+  }
+  termConnectedProjectId = null;
+  updateTerminalButtons();
+}
+
+function connectTerminal(projectId) {
+  if (!terminalSupported) {
+    setTermMeta("Terminal is not supported on this server.");
+    return;
+  }
+  if (!terminalEnabled) {
+    setTermMeta("Terminal is disabled by server config.");
+    return;
+  }
+  if (!projectId) {
+    setTermMeta("Select a project to connect.");
+    return;
+  }
+
+  selectedProjectId = projectId;
+  disconnectTerminal();
+
+  const t = ensureXterm();
+  if (!t) return;
+  t.clear();
+  t.writeln?.(`Connecting to ${projectId}...`);
+  setTermMeta(`Connecting • ${projectId}`);
+
+  const socket = new WebSocket(wsUrl(`/ws/projects/${encodeURIComponent(projectId)}/terminal`));
+  socket.binaryType = "arraybuffer";
+  terminalSocket = socket;
+  termConnectedProjectId = projectId;
+  updateTerminalButtons();
+
+  socket.addEventListener("open", () => {
+    sendTerminalResize();
+  });
+
+  socket.addEventListener("message", (ev) => {
+    if (!term) return;
+    if (typeof ev.data === "string") {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "ready") {
+          setTermMeta(`Connected • ${msg.path || projectId}`);
+          return;
+        }
+        if (msg.type === "error") {
+          setTermMeta(`Terminal error: ${msg.message || "unknown"}`);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    try {
+      const text = termDecoder.decode(new Uint8Array(ev.data));
+      term.write(text);
+    } catch {
+      // ignore
+    }
+  });
+
+  socket.addEventListener("close", (ev) => {
+    if (terminalSocket === socket) {
+      terminalSocket = null;
+      termConnectedProjectId = null;
+      updateTerminalButtons();
+    }
+    if (ev.code === 4401) {
+      window.location.href = "/login.html";
+      return;
+    }
+    setTermMeta(`Disconnected • code=${ev.code || 0}`);
+  });
+
+  socket.addEventListener("error", () => {
+    setTermMeta("Terminal connection error.");
+  });
+}
+
 async function loadSystem() {
   const res = await apiFetch("/api/system");
   if (!res.ok) {
@@ -85,6 +252,8 @@ function projectCard(project) {
   const typ = `<span class="pill pill--muted">${project.detected_type}</span>`;
 
   const disabledGit = project.is_git ? "" : "disabled";
+  const termDisabled = terminalEnabled ? "" : "disabled";
+  const termTitle = terminalEnabled ? "" : 'title="Terminal disabled"';
 
   return `
     <div class="card project-card" data-project-id="${project.id}">
@@ -99,9 +268,41 @@ function projectCard(project) {
         <button class="btn btn--small" data-action="git_pull" ${disabledGit}>Git Pull</button>
         <button class="btn btn--small" data-action="list_files">Files</button>
         <button class="btn btn--small" data-action="view_logs">View Logs</button>
+        <button class="btn btn--small" data-action="terminal" ${termDisabled} ${termTitle}>Terminal</button>
       </div>
     </div>
   `;
+}
+
+async function loadTerminalCapability() {
+  terminalEnabled = false;
+  terminalSupported = false;
+  updateTerminalButtons();
+
+  try {
+    const res = await apiFetch("/api/terminal");
+    if (!res.ok) {
+      setTermMeta(await readErrorMessage(res));
+      return;
+    }
+    const data = await res.json();
+    terminalSupported = !!data.supported;
+    terminalEnabled = !!data.enabled;
+  } catch (err) {
+    setTermMeta(String(err));
+    return;
+  }
+
+  if (!terminalSupported) {
+    setTermMeta("Terminal not supported on this server (Linux/POSIX only).");
+  } else if (!terminalEnabled) {
+    setTermMeta("Terminal disabled by server. Set ENABLE_WEB_TERMINAL=true to enable.");
+  } else if (termConnectedProjectId) {
+    setTermMeta(`Connected • ${termConnectedProjectId}`);
+  } else {
+    setTermMeta("Select a project then connect.");
+  }
+  updateTerminalButtons();
 }
 
 async function loadProjects() {
@@ -123,9 +324,14 @@ async function loadProjects() {
       const action = btn.dataset.action;
       const pid = card.dataset.projectId;
       selectedProjectId = pid;
+      updateTerminalButtons();
 
       if (action === "view_logs") {
         await tailLogs();
+        return;
+      }
+      if (action === "terminal") {
+        connectTerminal(pid);
         return;
       }
       await runAction(pid, action);
@@ -226,6 +432,7 @@ async function logout() {
 document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("refreshBtn").addEventListener("click", async () => {
     await loadSystem();
+    await loadTerminalCapability();
     await loadProjects();
   });
   document.getElementById("logoutBtn").addEventListener("click", logout);
@@ -234,7 +441,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("logsLiveBtn").addEventListener("click", startLiveLogs);
   document.getElementById("logsStopBtn").addEventListener("click", stopLogs);
 
+  document.getElementById("termConnectBtn").addEventListener("click", () => connectTerminal(selectedProjectId));
+  document.getElementById("termDisconnectBtn").addEventListener("click", disconnectTerminal);
+  window.addEventListener("resize", scheduleTerminalResize);
+
   await loadSystem();
+  await loadTerminalCapability();
   await loadProjects();
 
   setInterval(() => {

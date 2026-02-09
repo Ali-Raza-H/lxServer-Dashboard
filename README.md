@@ -64,12 +64,12 @@ powershell -ExecutionPolicy Bypass -File scripts\dev_backend.ps1
 
 Configuration is via environment variables (use `backend/.env.example` as a template). Important ones:
 
-- `DEV_ROOT` (default: `~/Desktop/Devs`) — folder containing your project folders (direct children only)
-- `DASHBOARD_LOGS` (default: `~/Desktop/Devs/dashboard_logs`) — per-project log files written here
-- `AUTH_DB` (default: `~/.local/share/homelab-dashboard/auth.db`) — SQLite auth DB (outside the repo by default)
-- `SECRET_KEY` — required for stable sessions (if missing, the backend generates an ephemeral key with a warning)
-- `HOST` / `PORT` — server bind
-- `COOKIE_SECURE` — set `true` when behind HTTPS
+- `DEV_ROOT` (default: `~/Desktop/Devs`) - folder containing your project folders (direct children only)
+- `DASHBOARD_LOGS` (default: `~/Desktop/Devs/dashboard_logs`) - per-project log files written here
+- `AUTH_DB` (default: `~/.local/share/homelab-dashboard/auth.db`) - SQLite auth DB (outside the repo by default)
+- `SECRET_KEY` - required for stable sessions (if missing, the backend generates an ephemeral key with a warning)
+- `HOST` / `PORT` - server bind
+- `COOKIE_SECURE` - set `true` when behind HTTPS
 
 ## Auth / first admin user
 
@@ -84,7 +84,7 @@ You can set:
 - `ADMIN_USER`
 - `ADMIN_PASS`
 
-…or the script will prompt interactively.
+...or the script will prompt interactively.
 
 ## What the dashboard does
 
@@ -124,6 +124,19 @@ Implementation notes:
 - Tail: `GET /api/projects/{project_id}/logs?lines=200`
 - Live: `WS /ws/projects/{project_id}/logs`
 
+### Web terminal (experimental)
+
+This feature opens an **interactive shell** on the server via WebSocket + PTY. It is **disabled by default**.
+
+- Capability: `GET /api/terminal`
+- WebSocket: `WS /ws/projects/{project_id}/terminal` (starts in the project directory)
+- UI: vendored xterm.js (`frontend/vendor/xterm/`, currently v5.3.0)
+
+To enable (in `backend/.env`):
+
+- `ENABLE_WEB_TERMINAL=true`
+- `TERMINAL_ALLOWED_USERS=admin` (recommended, comma-separated)
+
 ### System stats
 
 `GET /api/system` returns: CPU, load average, RAM, disk usage, uptime, hostname, and local time.
@@ -157,9 +170,9 @@ sudo systemctl enable --now homelab-dashboard
 - Treat this as a **LAN/VPN-only** app (e.g. behind Tailscale). Do not expose it publicly as-is.
 - For HTTPS deployments, put it behind a reverse proxy and set `COOKIE_SECURE=true`.
 - The API is intentionally allowlisted: it does **not** execute arbitrary commands from user input.
+- The experimental web terminal is **equivalent to remote shell access** as the service user. Enable it only if you fully understand the risk.
 
 ## Troubleshooting
 
 - **401 redirects to login**: make sure you ran `python scripts/init_db.py` and are logging in with that user.
-- **Windows + OneDrive warnings during tests**: OneDrive/permissions can block pytest’s cache writes; the test run should still pass.
-
+- **Windows + OneDrive warnings during tests**: OneDrive/permissions can block pytest's cache writes; the test run should still pass.

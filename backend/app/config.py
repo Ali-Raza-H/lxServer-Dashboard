@@ -30,6 +30,13 @@ def _parse_bool(value: str | None, default: bool) -> bool:
     return default
 
 
+def _parse_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    parts = [p.strip() for p in value.split(",")]
+    return [p for p in parts if p]
+
+
 def _expand_path(value: str) -> Path:
     expanded = os.path.expandvars(value)
     return Path(expanded).expanduser().resolve(strict=False)
@@ -48,6 +55,13 @@ class Settings:
     session_ttl_seconds: int
     dashboard_root: Path
     frontend_dir: Path
+    enable_web_terminal: bool
+    terminal_allowed_users: frozenset[str]
+    terminal_shell: str
+    terminal_max_sessions_per_user: int
+    terminal_max_sessions_total: int
+    terminal_idle_timeout_seconds: int
+    terminal_allowed_origins: tuple[str, ...]
 
 
 @lru_cache(maxsize=1)
@@ -69,6 +83,14 @@ def get_settings() -> Settings:
     cookie_name = os.environ.get("COOKIE_NAME", "homelab_dashboard_session")
     cookie_secure = _parse_bool(os.environ.get("COOKIE_SECURE"), False)
     session_ttl_seconds = _parse_int(os.environ.get("SESSION_TTL_SECONDS"), 60 * 60 * 24 * 7)
+
+    enable_web_terminal = _parse_bool(os.environ.get("ENABLE_WEB_TERMINAL"), False)
+    terminal_allowed_users = frozenset({u.lower() for u in _parse_csv(os.environ.get("TERMINAL_ALLOWED_USERS"))})
+    terminal_shell = os.environ.get("TERMINAL_SHELL", "/bin/bash").strip() or "/bin/bash"
+    terminal_max_sessions_per_user = _parse_int(os.environ.get("TERMINAL_MAX_SESSIONS_PER_USER"), 2)
+    terminal_max_sessions_total = _parse_int(os.environ.get("TERMINAL_MAX_SESSIONS_TOTAL"), 10)
+    terminal_idle_timeout_seconds = _parse_int(os.environ.get("TERMINAL_IDLE_TIMEOUT_SECONDS"), 1800)
+    terminal_allowed_origins = tuple(_parse_csv(os.environ.get("TERMINAL_ALLOWED_ORIGINS")))
 
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
@@ -94,4 +116,11 @@ def get_settings() -> Settings:
         session_ttl_seconds=session_ttl_seconds,
         dashboard_root=dashboard_root,
         frontend_dir=frontend_dir,
+        enable_web_terminal=enable_web_terminal,
+        terminal_allowed_users=terminal_allowed_users,
+        terminal_shell=terminal_shell,
+        terminal_max_sessions_per_user=max(1, terminal_max_sessions_per_user),
+        terminal_max_sessions_total=max(1, terminal_max_sessions_total),
+        terminal_idle_timeout_seconds=max(30, terminal_idle_timeout_seconds),
+        terminal_allowed_origins=terminal_allowed_origins,
     )

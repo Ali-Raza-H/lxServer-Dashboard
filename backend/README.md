@@ -1,6 +1,6 @@
 # Homelab Control Dashboard (v1)
 
-A lightweight, self-hosted web dashboard for browsing projects in your homelab “devs root” and running **safe, predefined actions** (no arbitrary command execution).
+A lightweight, self-hosted web dashboard for browsing projects in your homelab "devs root" and running **safe, predefined actions** (no arbitrary command execution).
 
 ## Features
 
@@ -13,6 +13,7 @@ A lightweight, self-hosted web dashboard for browsing projects in your homelab �
   - `list_files` (top-level only)
 - Per-project logs (tail + WebSocket streaming)
 - System stats (psutil)
+- Experimental web terminal (opt-in; disabled by default)
 
 ## Assumptions
 
@@ -69,11 +70,20 @@ The backend reads environment variables (see `backend/.env.example`):
 - `SECRET_KEY` (required for stable sessions; auto-generated in dev with a warning)
 - Optional: `AUTH_DB`, `COOKIE_NAME`, `COOKIE_SECURE`, `SESSION_TTL_SECONDS`
 
+Experimental web terminal (dangerous):
+
+- `ENABLE_WEB_TERMINAL` (default: `false`)
+- `TERMINAL_ALLOWED_USERS` (recommended)
+- `TERMINAL_SHELL` (default: `/bin/bash`)
+- `TERMINAL_MAX_SESSIONS_PER_USER`, `TERMINAL_MAX_SESSIONS_TOTAL`, `TERMINAL_IDLE_TIMEOUT_SECONDS`
+- `TERMINAL_ALLOWED_ORIGINS` (optional Origin allowlist)
+
 ## Security notes
 
 - Keep this on your LAN (or behind a VPN). If you need internet access, use a reverse proxy + HTTPS + additional controls.
 - Actions are hard-coded allowlists. The API does **not** run arbitrary shell commands from user input.
 - `git pull` is `--ff-only` and disables terminal prompts (`GIT_TERMINAL_PROMPT=0`).
+- The experimental web terminal is **equivalent to remote shell access** as the service user. Enable it only if you fully understand the risk.
 
 ## Running tests
 
