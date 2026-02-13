@@ -6,6 +6,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,17 +28,25 @@ ws_router = APIRouter(tags=["terminal"])
 
 
 def _terminal_supported() -> bool:
-    if os.name != "posix":
-        return False
-    try:
-        import pty  # noqa: F401
-        import termios  # noqa: F401
-        import fcntl  # noqa: F401
-        import struct  # noqa: F401
-        import signal  # noqa: F401
-    except Exception:
-        return False
-    return True
+    if os.name == "posix":
+        try:
+            import pty  # noqa: F401
+            import termios  # noqa: F401
+            import fcntl  # noqa: F401
+            import struct  # noqa: F401
+            import signal  # noqa: F401
+        except Exception:
+            return False
+        return True
+
+    if os.name == "nt":
+        try:
+            import winpty  # noqa: F401
+        except Exception:
+            return False
+        return True
+
+    return False
 
 
 def _user_allowed(settings: Settings, user: User) -> bool:
@@ -101,12 +110,15 @@ def _origin_allowed(*, websocket: WebSocket, settings: Settings) -> bool:
 
 def _shell_command(settings: Settings) -> list[str] | None:
     raw = settings.terminal_shell.strip()
-    parts = shlex.split(raw, posix=True) if raw else []
+    parts = shlex.split(raw, posix=(os.name == "posix")) if raw else []
     if not parts:
-        parts = ["/bin/bash"]
+        if os.name == "nt":
+            parts = [os.environ.get("COMSPEC", "cmd.exe")]
+        else:
+            parts = ["/bin/bash"]
 
     exe = parts[0]
-    if "/" in exe:
+    if any(sep in exe for sep in ("/", "\\")):
         if Path(exe).exists():
             return parts
     else:
@@ -115,7 +127,12 @@ def _shell_command(settings: Settings) -> list[str] | None:
             parts[0] = resolved
             return parts
 
-    for fallback in ("/bin/bash", "/bin/sh", "bash", "sh"):
+    if os.name == "nt":
+        fallbacks: tuple[str, ...] = (os.environ.get("COMSPEC", "cmd.exe"), "cmd.exe", "powershell.exe")
+    else:
+        fallbacks = ("/bin/bash", "/bin/sh", "bash", "sh")
+
+    for fallback in fallbacks:
         resolved = shutil.which(fallback) if "/" not in fallback else (fallback if Path(fallback).exists() else None)
         if resolved:
             return [resolved]
@@ -208,6 +225,32 @@ def _spawn_pty(*, cmd: list[str], cwd: Path, initial_cols: int = 80, initial_row
             pass
 
 
+def _winpty_set_winsize(proc: Any, *, cols: int, rows: int) -> None:
+    safe_cols = max(10, min(int(cols), 400))
+    safe_rows = max(5, min(int(rows), 200))
+    for args in ((safe_rows, safe_cols), (safe_cols, safe_rows)):
+        try:
+            proc.setwinsize(*args)
+            return
+        except Exception:
+            continue
+
+
+def _spawn_winpty(*, cmd: list[str], cwd: Path, initial_cols: int = 80, initial_rows: int = 24) -> Any:
+    from winpty import PtyProcess  # type: ignore[import-not-found]
+
+    env = os.environ.copy()
+    env.setdefault("TERM", "xterm-256color")
+    env.setdefault("COLORTERM", "truecolor")
+
+    try:
+        proc = PtyProcess.spawn(cmd, cwd=str(cwd), env=env, dimensions=(int(initial_rows), int(initial_cols)))
+    except TypeError:
+        proc = PtyProcess.spawn(cmd, cwd=str(cwd), env=env)
+        _winpty_set_winsize(proc, cols=initial_cols, rows=initial_rows)
+    return proc
+
+
 async def _terminate_process(proc: subprocess.Popen[bytes], *, timeout_sec: float = 2.5) -> int:
     import signal  # posix-only
 
@@ -232,6 +275,34 @@ async def _terminate_process(proc: subprocess.Popen[bytes], *, timeout_sec: floa
             pass
 
     return int(proc.returncode or 0)
+
+
+async def _terminate_winpty(proc: Any, *, timeout_sec: float = 2.5) -> int:
+    try:
+        close = getattr(proc, "close", None)
+        if callable(close):
+            close()
+    except Exception:
+        pass
+
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        try:
+            isalive = getattr(proc, "isalive", None)
+            if callable(isalive) and not isalive():
+                break
+        except Exception:
+            break
+        await asyncio.sleep(0.05)
+
+    for attr in ("exitstatus", "returncode", "status"):
+        try:
+            v = getattr(proc, attr)
+            if v is not None:
+                return int(v)
+        except Exception:
+            continue
+    return 0
 
 
 @ws_router.websocket("/ws/projects/{project_id}/terminal")
@@ -291,6 +362,122 @@ async def terminal_ws(websocket: WebSocket, project_id: str) -> None:
         last_activity = time.monotonic()
 
     try:
+        if os.name == "nt":
+            winpty_proc = _spawn_winpty(cmd=cmd, cwd=project.abs_path)
+
+            await websocket.accept()
+            await websocket.send_json({"type": "ready", "project_id": project_id, "path": project.rel_path, "username": user.username})
+
+            loop = asyncio.get_running_loop()
+            q: asyncio.Queue[bytes | None] = asyncio.Queue()
+            stop = threading.Event()
+
+            def _reader() -> None:
+                try:
+                    while not stop.is_set():
+                        try:
+                            chunk = winpty_proc.read(4096)
+                        except Exception:
+                            loop.call_soon_threadsafe(q.put_nowait, None)
+                            return
+                        if not chunk:
+                            loop.call_soon_threadsafe(q.put_nowait, None)
+                            return
+                        if isinstance(chunk, str):
+                            data = chunk.encode("utf-8", errors="replace")
+                        else:
+                            data = bytes(chunk)
+                        loop.call_soon_threadsafe(q.put_nowait, data)
+                except Exception:
+                    loop.call_soon_threadsafe(q.put_nowait, None)
+
+            t = threading.Thread(target=_reader, name="winpty_reader", daemon=True)
+            t.start()
+
+            async def pty_to_ws() -> None:
+                while True:
+                    data = await q.get()
+                    if data is None:
+                        return
+                    bump_activity()
+                    await websocket.send_bytes(data)
+
+            async def ws_to_pty() -> None:
+                while True:
+                    msg = await websocket.receive()
+                    msg_type = msg.get("type")
+                    if msg_type == "websocket.disconnect":
+                        return
+
+                    if msg.get("bytes") is not None:
+                        raw = msg["bytes"]
+                        if raw:
+                            bump_activity()
+                            try:
+                                winpty_proc.write(raw)
+                            except TypeError:
+                                winpty_proc.write(raw.decode("utf-8", errors="replace"))
+                            except Exception:
+                                return
+                        continue
+
+                    text = msg.get("text")
+                    if not text:
+                        continue
+                    bump_activity()
+                    try:
+                        payload = json.loads(text)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if payload.get("type") == "resize":
+                        try:
+                            cols = int(payload.get("cols", 80))
+                            rows = int(payload.get("rows", 24))
+                        except (TypeError, ValueError):
+                            continue
+                        _winpty_set_winsize(winpty_proc, cols=cols, rows=rows)
+                        continue
+
+                    if payload.get("type") == "ping":
+                        await websocket.send_json({"type": "pong"})
+
+            async def idle_watchdog() -> None:
+                timeout = float(settings.terminal_idle_timeout_seconds)
+                while True:
+                    await asyncio.sleep(1.0)
+                    if time.monotonic() - last_activity > timeout:
+                        try:
+                            await websocket.send_json({"type": "error", "message": "idle timeout"})
+                        except Exception:
+                            pass
+                        try:
+                            await websocket.close(code=4408)
+                        except Exception:
+                            pass
+                        return
+
+            tasks = [
+                asyncio.create_task(pty_to_ws(), name="pty_to_ws"),
+                asyncio.create_task(ws_to_pty(), name="ws_to_pty"),
+                asyncio.create_task(idle_watchdog(), name="idle_watchdog"),
+            ]
+            try:
+                _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                stop.set()
+                proc = None
+                master_fd = None
+                remove_reader = None
+                try:
+                    await _terminate_winpty(winpty_proc)
+                except Exception:
+                    pass
+            return
+
         proc, master_fd = _spawn_pty(cmd=cmd, cwd=project.abs_path)
         os.set_blocking(master_fd, False)
 

@@ -4,6 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Homelab Dashboard - Login</title>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("theme");
+          const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+          const theme = stored === "light" || stored === "dark" ? stored : prefersLight ? "light" : "dark";
+          document.documentElement.dataset.theme = theme;
+        } catch {
+          // ignore
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/styles.css" />
     <script src="/login.js" defer></script>
   </head>
@@ -31,4 +43,3 @@
     </div>
   </body>
 </html>
-

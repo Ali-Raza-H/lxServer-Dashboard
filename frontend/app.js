@@ -1,14 +1,13 @@
 let selectedProjectId = null;
 let logsSocket = null;
-let terminalSocket = null;
-let terminalEnabled = false;
-let terminalSupported = false;
-let term = null;
-let fitAddon = null;
-let termConnectedProjectId = null;
-let termResizeTimer = null;
-const termDecoder = new TextDecoder();
-const termEncoder = new TextEncoder();
+
+const HISTORY_MAX = 60;
+const history = {
+  cpu: [],
+  mem: [],
+  disk: [],
+  load: [],
+};
 
 async function apiFetch(path, options = {}) {
   const opts = {
@@ -42,13 +41,20 @@ async function readErrorMessage(res) {
 
 function fmtBytes(bytes) {
   const units = ["B", "KB", "MB", "GB", "TB"];
-  let v = bytes;
+  let v = Number(bytes) || 0;
   let i = 0;
   while (v >= 1024 && i < units.length - 1) {
     v /= 1024;
     i += 1;
   }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function pct(numerator, denominator) {
+  const num = Number(numerator) || 0;
+  const den = Number(denominator) || 0;
+  if (den <= 0) return 0;
+  return (num / den) * 100;
 }
 
 function setOutput(meta, text) {
@@ -72,176 +78,125 @@ function wsUrl(path) {
   return `${proto}//${window.location.host}${path}`;
 }
 
-function setTermMeta(text) {
-  document.getElementById("termMeta").textContent = text || "";
+function getTheme() {
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
 }
 
-function updateTerminalButtons() {
-  const connectBtn = document.getElementById("termConnectBtn");
-  const disconnectBtn = document.getElementById("termDisconnectBtn");
-
-  if (!terminalSupported) {
-    connectBtn.disabled = true;
-    disconnectBtn.disabled = true;
-    return;
-  }
-  if (!terminalEnabled) {
-    connectBtn.disabled = true;
-    disconnectBtn.disabled = true;
-    return;
-  }
-
-  connectBtn.disabled = !selectedProjectId || !!terminalSocket;
-  disconnectBtn.disabled = !terminalSocket;
+function updateThemeToggleLabel() {
+  const btn = document.getElementById("themeToggleBtn");
+  if (!btn) return;
+  btn.textContent = `Theme: ${getTheme() === "light" ? "Light" : "Dark"}`;
 }
 
-function ensureXterm() {
-  if (term) return term;
-  if (typeof window.Terminal !== "function") {
-    setTermMeta("Terminal UI failed to load (xterm.js missing).");
-    return null;
+function setTheme(theme) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try {
+    localStorage.setItem("theme", next);
+  } catch {
+    // ignore
   }
-
-  const container = document.getElementById("termContainer");
-  container.innerHTML = "";
-
-  term = new window.Terminal({
-    cursorBlink: true,
-    fontSize: 13,
-    scrollback: 2000,
-    theme: { background: "rgba(0,0,0,0)" },
-  });
-
-  if (window.FitAddon?.FitAddon) {
-    fitAddon = new window.FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
-  }
-
-  term.open(container);
-  fitAddon?.fit?.();
-
-  term.onData((data) => {
-    if (!terminalSocket || terminalSocket.readyState !== WebSocket.OPEN) return;
-    if (!data) return;
-    terminalSocket.send(termEncoder.encode(data));
-  });
-
-  return term;
+  updateThemeToggleLabel();
 }
 
-function sendTerminalResize() {
-  if (!terminalSocket || terminalSocket.readyState !== WebSocket.OPEN) return;
-  if (!term) return;
-  fitAddon?.fit?.();
-  terminalSocket.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+function toggleTheme() {
+  setTheme(getTheme() === "light" ? "dark" : "light");
 }
 
-function scheduleTerminalResize() {
-  if (termResizeTimer) window.clearTimeout(termResizeTimer);
-  termResizeTimer = window.setTimeout(() => {
-    sendTerminalResize();
-  }, 80);
+function pushHistory(arr, value) {
+  arr.push(value);
+  if (arr.length > HISTORY_MAX) arr.splice(0, arr.length - HISTORY_MAX);
 }
 
-function disconnectTerminal() {
-  if (terminalSocket) {
-    terminalSocket.close();
-    terminalSocket = null;
+function sparkPath(values, { min = 0, max = 100 } = {}) {
+  if (!values?.length) return "";
+  const w = 100;
+  const h = 24;
+  const n = values.length;
+  const safeMin = Number.isFinite(min) ? min : 0;
+  let safeMax = Number.isFinite(max) ? max : safeMin + 1;
+  if (safeMax <= safeMin) safeMax = safeMin + 1;
+
+  const dx = n > 1 ? w / (n - 1) : 0;
+  let d = "";
+  for (let i = 0; i < n; i += 1) {
+    const v = Number(values[i]);
+    const t = Number.isFinite(v) ? (v - safeMin) / (safeMax - safeMin) : 0;
+    const clamped = Math.max(0, Math.min(1, t));
+    const x = i * dx;
+    const y = (h - 1) - clamped * (h - 2);
+    d += `${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)} `;
   }
-  termConnectedProjectId = null;
-  updateTerminalButtons();
+  return d.trim();
 }
 
-function connectTerminal(projectId) {
-  if (!terminalSupported) {
-    setTermMeta("Terminal is not supported on this server.");
-    return;
+function renderSpark(pathId, values, opts) {
+  const path = document.getElementById(pathId);
+  if (!path) return;
+  path.setAttribute("d", sparkPath(values, opts));
+}
+
+function updatePerformance(data) {
+  const cpu = Number(data?.cpu_percent);
+  const memUsed = Number(data?.mem_used) || 0;
+  const memTotal = Number(data?.mem_total) || 0;
+  const diskUsed = Number(data?.disk_used) || 0;
+  const diskTotal = Number(data?.disk_total) || 0;
+  const load1 = Number(data?.load_avg?.[0]) || 0;
+
+  const cpuPct = Number.isFinite(cpu) ? Math.max(0, Math.min(100, cpu)) : 0;
+  const memPct = Math.max(0, Math.min(100, pct(memUsed, memTotal)));
+  const diskPct = Math.max(0, Math.min(100, pct(diskUsed, diskTotal)));
+
+  pushHistory(history.cpu, cpuPct);
+  pushHistory(history.mem, memPct);
+  pushHistory(history.disk, diskPct);
+  pushHistory(history.load, Math.max(0, load1));
+
+  document.getElementById("metricCpuValue").textContent = `${cpuPct.toFixed(0)}%`;
+  document.getElementById("metricMemValue").textContent = `${memPct.toFixed(0)}%`;
+  document.getElementById("metricMemSub").textContent = `${fmtBytes(memUsed)}/${fmtBytes(memTotal)}`;
+  document.getElementById("metricDiskValue").textContent = `${diskPct.toFixed(0)}%`;
+  document.getElementById("metricDiskSub").textContent = `${fmtBytes(diskUsed)}/${fmtBytes(diskTotal)}`;
+  document.getElementById("metricLoadValue").textContent = load1.toFixed(2);
+
+  renderSpark("sparkCpu", history.cpu, { min: 0, max: 100 });
+  renderSpark("sparkMem", history.mem, { min: 0, max: 100 });
+  renderSpark("sparkDisk", history.disk, { min: 0, max: 100 });
+  const loadMax = Math.max(1, ...history.load);
+  renderSpark("sparkLoad", history.load, { min: 0, max: loadMax });
+
+  const perfMeta = document.getElementById("perfMeta");
+  const t = data?.local_time_iso ? new Date(String(data.local_time_iso)) : new Date();
+  if (!Number.isNaN(t.getTime())) {
+    perfMeta.textContent = `Updated ${t.toLocaleTimeString()}`;
+  } else {
+    perfMeta.textContent = "";
   }
-  if (!terminalEnabled) {
-    setTermMeta("Terminal is disabled by server config.");
-    return;
-  }
-  if (!projectId) {
-    setTermMeta("Select a project to connect.");
-    return;
-  }
-
-  selectedProjectId = projectId;
-  disconnectTerminal();
-
-  const t = ensureXterm();
-  if (!t) return;
-  t.clear();
-  t.writeln?.(`Connecting to ${projectId}...`);
-  setTermMeta(`Connecting • ${projectId}`);
-
-  const socket = new WebSocket(wsUrl(`/ws/projects/${encodeURIComponent(projectId)}/terminal`));
-  socket.binaryType = "arraybuffer";
-  terminalSocket = socket;
-  termConnectedProjectId = projectId;
-  updateTerminalButtons();
-
-  socket.addEventListener("open", () => {
-    sendTerminalResize();
-  });
-
-  socket.addEventListener("message", (ev) => {
-    if (!term) return;
-    if (typeof ev.data === "string") {
-      try {
-        const msg = JSON.parse(ev.data);
-        if (msg.type === "ready") {
-          setTermMeta(`Connected • ${msg.path || projectId}`);
-          return;
-        }
-        if (msg.type === "error") {
-          setTermMeta(`Terminal error: ${msg.message || "unknown"}`);
-          return;
-        }
-      } catch {
-        // ignore
-      }
-      return;
-    }
-
-    try {
-      const text = termDecoder.decode(new Uint8Array(ev.data));
-      term.write(text);
-    } catch {
-      // ignore
-    }
-  });
-
-  socket.addEventListener("close", (ev) => {
-    if (terminalSocket === socket) {
-      terminalSocket = null;
-      termConnectedProjectId = null;
-      updateTerminalButtons();
-    }
-    if (ev.code === 4401) {
-      window.location.href = "/login.html";
-      return;
-    }
-    setTermMeta(`Disconnected • code=${ev.code || 0}`);
-  });
-
-  socket.addEventListener("error", () => {
-    setTermMeta("Terminal connection error.");
-  });
 }
 
 async function loadSystem() {
   const res = await apiFetch("/api/system");
   if (!res.ok) {
     document.getElementById("sysSummary").textContent = await readErrorMessage(res);
+    document.getElementById("perfMeta").textContent = "";
     return;
   }
+
   const data = await res.json();
-  const sys = document.getElementById("sysSummary");
-  const load = data.load_avg?.length ? data.load_avg.map((x) => x.toFixed(2)).join(", ") : "n/a";
-  sys.textContent = `${data.hostname} • CPU ${data.cpu_percent.toFixed(0)}% • Load ${load} • RAM ${fmtBytes(data.mem_used)}/${fmtBytes(
-    data.mem_total
-  )} • Disk ${fmtBytes(data.disk_used)}/${fmtBytes(data.disk_total)}`;
+  const hostname = data.hostname || "host";
+  const cpu = Number(data.cpu_percent) || 0;
+  const load1 = Number(data?.load_avg?.[0]) || 0;
+  const memUsed = Number(data.mem_used) || 0;
+  const memTotal = Number(data.mem_total) || 0;
+  const diskUsed = Number(data.disk_used) || 0;
+  const diskTotal = Number(data.disk_total) || 0;
+
+  document.getElementById("sysSummary").textContent =
+    `${hostname} | CPU ${cpu.toFixed(0)}% | Load ${load1.toFixed(2)} | ` +
+    `RAM ${fmtBytes(memUsed)}/${fmtBytes(memTotal)} | Disk ${fmtBytes(diskUsed)}/${fmtBytes(diskTotal)}`;
+
+  updatePerformance(data);
 }
 
 function projectCard(project) {
@@ -252,8 +207,6 @@ function projectCard(project) {
   const typ = `<span class="pill pill--muted">${project.detected_type}</span>`;
 
   const disabledGit = project.is_git ? "" : "disabled";
-  const termDisabled = terminalEnabled ? "" : "disabled";
-  const termTitle = terminalEnabled ? "" : 'title="Terminal disabled"';
 
   return `
     <div class="card project-card" data-project-id="${project.id}">
@@ -268,41 +221,10 @@ function projectCard(project) {
         <button class="btn btn--small" data-action="git_pull" ${disabledGit}>Git Pull</button>
         <button class="btn btn--small" data-action="list_files">Files</button>
         <button class="btn btn--small" data-action="view_logs">View Logs</button>
-        <button class="btn btn--small" data-action="terminal" ${termDisabled} ${termTitle}>Terminal</button>
+        <button class="btn btn--small" data-action="terminal">Terminal</button>
       </div>
     </div>
   `;
-}
-
-async function loadTerminalCapability() {
-  terminalEnabled = false;
-  terminalSupported = false;
-  updateTerminalButtons();
-
-  try {
-    const res = await apiFetch("/api/terminal");
-    if (!res.ok) {
-      setTermMeta(await readErrorMessage(res));
-      return;
-    }
-    const data = await res.json();
-    terminalSupported = !!data.supported;
-    terminalEnabled = !!data.enabled;
-  } catch (err) {
-    setTermMeta(String(err));
-    return;
-  }
-
-  if (!terminalSupported) {
-    setTermMeta("Terminal not supported on this server (Linux/POSIX only).");
-  } else if (!terminalEnabled) {
-    setTermMeta("Terminal disabled by server. Set ENABLE_WEB_TERMINAL=true to enable.");
-  } else if (termConnectedProjectId) {
-    setTermMeta(`Connected • ${termConnectedProjectId}`);
-  } else {
-    setTermMeta("Select a project then connect.");
-  }
-  updateTerminalButtons();
 }
 
 async function loadProjects() {
@@ -324,14 +246,13 @@ async function loadProjects() {
       const action = btn.dataset.action;
       const pid = card.dataset.projectId;
       selectedProjectId = pid;
-      updateTerminalButtons();
 
       if (action === "view_logs") {
         await tailLogs();
         return;
       }
       if (action === "terminal") {
-        connectTerminal(pid);
+        window.location.href = `/terminal?project=${encodeURIComponent(pid)}&connect=1`;
         return;
       }
       await runAction(pid, action);
@@ -340,18 +261,18 @@ async function loadProjects() {
 }
 
 async function runAction(projectId, action) {
-  setOutput(`${action} • ${projectId}`, "Running…");
+  setOutput(`${action} | ${projectId}`, "Running...");
   try {
     const res = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}/action`, {
       method: "POST",
       body: JSON.stringify({ action }),
     });
     if (!res.ok) {
-      setOutput(`error • ${res.status}`, await readErrorMessage(res));
+      setOutput(`error | ${res.status}`, await readErrorMessage(res));
       return;
     }
     const data = await res.json();
-    const meta = `exit=${data.exit_code} • ${data.duration_ms}ms`;
+    const meta = `exit=${data.exit_code} | ${data.duration_ms}ms`;
     let out = "";
     if (data.stdout) out += data.stdout.trimEnd();
     if (data.stderr) out += (out ? "\n\n" : "") + data.stderr.trimEnd();
@@ -370,11 +291,11 @@ async function tailLogs() {
   const pid = selectedProjectId;
   const res = await apiFetch(`/api/projects/${encodeURIComponent(pid)}/logs?lines=200`);
   if (!res.ok) {
-    setLogs(`error • ${res.status}`, await readErrorMessage(res));
+    setLogs(`error | ${res.status}`, await readErrorMessage(res));
     return;
   }
   const data = await res.json();
-  setLogs(`Tail • ${pid}`, data.lines.join("\n"));
+  setLogs(`Tail | ${pid}`, data.lines.join("\n"));
 }
 
 function stopLogs() {
@@ -392,7 +313,7 @@ function startLiveLogs() {
   }
   stopLogs();
   const pid = selectedProjectId;
-  setLogs(`Live • ${pid}`, "");
+  setLogs(`Live | ${pid}`, "");
 
   const socket = new WebSocket(wsUrl(`/ws/projects/${encodeURIComponent(pid)}/logs`));
   logsSocket = socket;
@@ -402,7 +323,7 @@ function startLiveLogs() {
     try {
       const msg = JSON.parse(ev.data);
       if (msg.type === "init") {
-        setLogs(`Live • ${pid}`, (msg.lines || []).join("\n"));
+        setLogs(`Live | ${pid}`, (msg.lines || []).join("\n"));
         return;
       }
       if (msg.type === "line") {
@@ -430,9 +351,11 @@ async function logout() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  document.getElementById("themeToggleBtn")?.addEventListener("click", toggleTheme);
+  updateThemeToggleLabel();
+
   document.getElementById("refreshBtn").addEventListener("click", async () => {
     await loadSystem();
-    await loadTerminalCapability();
     await loadProjects();
   });
   document.getElementById("logoutBtn").addEventListener("click", logout);
@@ -441,15 +364,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("logsLiveBtn").addEventListener("click", startLiveLogs);
   document.getElementById("logsStopBtn").addEventListener("click", stopLogs);
 
-  document.getElementById("termConnectBtn").addEventListener("click", () => connectTerminal(selectedProjectId));
-  document.getElementById("termDisconnectBtn").addEventListener("click", disconnectTerminal);
-  window.addEventListener("resize", scheduleTerminalResize);
+  window.addEventListener("beforeunload", () => stopLogs());
 
   await loadSystem();
-  await loadTerminalCapability();
   await loadProjects();
 
   setInterval(() => {
     loadSystem().catch(() => {});
   }, 5000);
 });
+

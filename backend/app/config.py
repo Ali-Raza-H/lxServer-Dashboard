@@ -86,7 +86,11 @@ def get_settings() -> Settings:
 
     enable_web_terminal = _parse_bool(os.environ.get("ENABLE_WEB_TERMINAL"), False)
     terminal_allowed_users = frozenset({u.lower() for u in _parse_csv(os.environ.get("TERMINAL_ALLOWED_USERS"))})
-    terminal_shell = os.environ.get("TERMINAL_SHELL", "/bin/bash").strip() or "/bin/bash"
+    if os.name == "nt":
+        default_shell = os.environ.get("COMSPEC", "cmd.exe")
+    else:
+        default_shell = "/bin/bash"
+    terminal_shell = os.environ.get("TERMINAL_SHELL", default_shell).strip() or default_shell
     terminal_max_sessions_per_user = _parse_int(os.environ.get("TERMINAL_MAX_SESSIONS_PER_USER"), 2)
     terminal_max_sessions_total = _parse_int(os.environ.get("TERMINAL_MAX_SESSIONS_TOTAL"), 10)
     terminal_idle_timeout_seconds = _parse_int(os.environ.get("TERMINAL_IDLE_TIMEOUT_SECONDS"), 1800)

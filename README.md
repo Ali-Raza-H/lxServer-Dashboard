@@ -35,6 +35,7 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 Open:
 
 - Dashboard: `http://localhost:8080/`
+- Terminal: `http://localhost:8080/terminal`
 - Login page: `http://localhost:8080/login.html`
 
 ## Windows development (PowerShell)
@@ -130,12 +131,13 @@ This feature opens an **interactive shell** on the server via WebSocket + PTY. I
 
 - Capability: `GET /api/terminal`
 - WebSocket: `WS /ws/projects/{project_id}/terminal` (starts in the project directory)
-- UI: vendored xterm.js (`frontend/vendor/xterm/`, currently v5.3.0)
+- UI: `/terminal` (vendored xterm.js in `frontend/vendor/xterm/`, currently v5.3.0)
 
 To enable (in `backend/.env`):
 
 - `ENABLE_WEB_TERMINAL=true`
 - `TERMINAL_ALLOWED_USERS=admin` (recommended, comma-separated)
+- Windows note: install `pywinpty` (included via `backend/requirements.txt`), and set `TERMINAL_SHELL=cmd.exe` if needed.
 
 ### System stats
 

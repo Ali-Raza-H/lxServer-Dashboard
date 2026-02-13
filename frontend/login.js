@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const password = document.getElementById("password").value;
 
     btn.disabled = true;
-    btn.textContent = "Logging in…";
+    btn.textContent = "Logging in...";
 
     try {
       const res = await apiFetch("/api/auth/login", {
@@ -66,4 +66,3 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
-

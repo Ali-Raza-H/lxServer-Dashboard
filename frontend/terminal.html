@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Homelab Dashboard - Terminal</title>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("theme");
+          const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+          const theme = stored === "light" || stored === "dark" ? stored : prefersLight ? "light" : "dark";
+          document.documentElement.dataset.theme = theme;
+        } catch {
+          // ignore
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/vendor/xterm/xterm.min.js" defer></script>
+    <script src="/vendor/xterm/xterm-addon-fit.min.js" defer></script>
+    <script src="/terminal.js" defer></script>
+  </head>
+  <body class="page page--terminal">
+    <header class="topbar">
+      <div class="topbar__left">
+        <a class="brand" href="/">Homelab Dashboard</a>
+        <nav class="nav" aria-label="Primary">
+          <a class="navlink" href="/">Dashboard</a>
+          <a class="navlink navlink--active" href="/terminal">Terminal</a>
+        </nav>
+        <div class="muted sys-summary" id="termMeta">Loading terminal...</div>
+      </div>
+      <div class="topbar__right">
+        <label class="select">
+          <span class="sr-only">Project</span>
+          <select id="projectSelect"></select>
+        </label>
+
+        <button id="termConnectBtn" class="btn btn--small" type="button">Connect</button>
+        <button id="termDisconnectBtn" class="btn btn--small btn--danger" type="button" disabled>Disconnect</button>
+
+        <button id="termFontDownBtn" class="btn btn--small" type="button" title="Decrease font size">A-</button>
+        <button id="termFontUpBtn" class="btn btn--small" type="button" title="Increase font size">A+</button>
+
+        <button id="themeToggleBtn" class="btn btn--small" type="button">Theme</button>
+        <button id="logoutBtn" class="btn btn--small btn--danger" type="button">Logout</button>
+      </div>
+    </header>
+
+    <main class="terminal-layout">
+      <div id="termContainer" class="terminal terminal--full"></div>
+    </main>
+  </body>
+</html>

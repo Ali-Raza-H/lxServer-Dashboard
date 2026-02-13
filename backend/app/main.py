@@ -47,6 +47,11 @@ def create_app() -> FastAPI:
     def login_page() -> FileResponse:
         return FileResponse(frontend_dir / "login.html")
 
+    @app.get("/terminal", include_in_schema=False)
+    @app.get("/terminal/", include_in_schema=False)
+    def terminal_page() -> FileResponse:
+        return FileResponse(frontend_dir / "terminal.html")
+
     app.include_router(auth_router)
     app.include_router(projects_router)
     app.include_router(actions_router)

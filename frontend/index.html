@@ -4,19 +4,33 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Homelab Control Dashboard</title>
-    <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("theme");
+          const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+          const theme = stored === "light" || stored === "dark" ? stored : prefersLight ? "light" : "dark";
+          document.documentElement.dataset.theme = theme;
+        } catch {
+          // ignore
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/styles.css" />
-    <script src="/vendor/xterm/xterm.min.js" defer></script>
-    <script src="/vendor/xterm/xterm-addon-fit.min.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body class="page">
     <header class="topbar">
       <div class="topbar__left">
-        <div class="brand">Homelab Dashboard</div>
-        <div id="sysSummary" class="sys-summary muted">Loading system stats…</div>
+        <a class="brand" href="/">Homelab Dashboard</a>
+        <nav class="nav" aria-label="Primary">
+          <a class="navlink navlink--active" href="/">Dashboard</a>
+          <a class="navlink" href="/terminal">Terminal</a>
+        </nav>
+        <div id="sysSummary" class="sys-summary muted">Loading system stats...</div>
       </div>
       <div class="topbar__right">
+        <button id="themeToggleBtn" class="btn btn--small" type="button">Theme</button>
         <button id="refreshBtn" class="btn">Refresh</button>
         <button id="logoutBtn" class="btn btn--danger">Logout</button>
       </div>
@@ -32,6 +46,58 @@
       </section>
 
       <aside class="side">
+        <div class="panel">
+          <div class="panel__head">
+            <h3>System Performance</h3>
+            <div class="muted" id="perfMeta"></div>
+          </div>
+          <div class="metrics">
+            <div class="metric-card">
+              <div class="metric-card__head">
+                <div class="metric-label">CPU</div>
+                <div class="metric-value" id="metricCpuValue">--%</div>
+              </div>
+              <div class="metric-sub muted" id="metricCpuSub">Usage</div>
+              <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkCpu" d="" />
+              </svg>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-card__head">
+                <div class="metric-label">RAM</div>
+                <div class="metric-value" id="metricMemValue">--%</div>
+              </div>
+              <div class="metric-sub muted" id="metricMemSub">-- / --</div>
+              <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkMem" d="" />
+              </svg>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-card__head">
+                <div class="metric-label">Disk</div>
+                <div class="metric-value" id="metricDiskValue">--%</div>
+              </div>
+              <div class="metric-sub muted" id="metricDiskSub">-- / --</div>
+              <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkDisk" d="" />
+              </svg>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-card__head">
+                <div class="metric-label">Load</div>
+                <div class="metric-value" id="metricLoadValue">--</div>
+              </div>
+              <div class="metric-sub muted" id="metricLoadSub">1m average</div>
+              <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkLoad" d="" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel__head">
             <h3>Output</h3>
@@ -51,18 +117,6 @@
           </div>
           <div class="muted" id="logsMeta">Select a project to view logs.</div>
           <pre id="logsPre" class="pre pre--logs"></pre>
-        </div>
-
-        <div class="panel">
-          <div class="panel__head">
-            <h3>Terminal</h3>
-            <div class="log-actions">
-              <button id="termConnectBtn" class="btn btn--small">Connect</button>
-              <button id="termDisconnectBtn" class="btn btn--small btn--danger" disabled>Disconnect</button>
-            </div>
-          </div>
-          <div class="muted" id="termMeta">Terminal is disabled.</div>
-          <div id="termContainer" class="terminal"></div>
         </div>
       </aside>
     </main>
