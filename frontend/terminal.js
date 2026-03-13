@@ -58,7 +58,7 @@ function getTheme() {
 function updateThemeToggleLabel() {
   const btn = document.getElementById("themeToggleBtn");
   if (!btn) return;
-  btn.textContent = `Theme: ${getTheme() === "light" ? "Light" : "Dark"}`;
+  btn.textContent = getTheme() === "light" ? "Dark" : "Light";
 }
 
 function setTheme(theme) {

@@ -58,8 +58,17 @@ function pct(numerator, denominator) {
 }
 
 function setOutput(meta, text) {
+  const outputPre = document.getElementById("outputPre");
+  outputPre.textContent = text || "";
+  outputPre.classList.toggle("pre--empty", !text);
   document.getElementById("outputMeta").textContent = meta || "";
-  document.getElementById("outputPre").textContent = text || "";
+
+  const panel = document.getElementById("outputPanel");
+  if (panel) {
+    panel.classList.remove("panel--flash");
+    void panel.offsetWidth;
+    panel.classList.add("panel--flash");
+  }
 }
 
 function setLogs(meta, text) {
@@ -85,7 +94,7 @@ function getTheme() {
 function updateThemeToggleLabel() {
   const btn = document.getElementById("themeToggleBtn");
   if (!btn) return;
-  btn.textContent = `Theme: ${getTheme() === "light" ? "Light" : "Dark"}`;
+  btn.textContent = getTheme() === "light" ? "Dark" : "Light";
 }
 
 function setTheme(theme) {
@@ -130,10 +139,17 @@ function sparkPath(values, { min = 0, max = 100 } = {}) {
   return d.trim();
 }
 
-function renderSpark(pathId, values, opts) {
+function sparkFillPath(values, opts) {
+  const linePath = sparkPath(values, opts);
+  if (!linePath) return "";
+  return `${linePath} L 100 24 L 0 24 Z`;
+}
+
+function renderSpark(pathId, fillPathId, values, opts) {
   const path = document.getElementById(pathId);
-  if (!path) return;
-  path.setAttribute("d", sparkPath(values, opts));
+  if (path) path.setAttribute("d", sparkPath(values, opts));
+  const fillPath = document.getElementById(fillPathId);
+  if (fillPath) fillPath.setAttribute("d", sparkFillPath(values, opts));
 }
 
 function updatePerformance(data) {
@@ -160,11 +176,11 @@ function updatePerformance(data) {
   document.getElementById("metricDiskSub").textContent = `${fmtBytes(diskUsed)}/${fmtBytes(diskTotal)}`;
   document.getElementById("metricLoadValue").textContent = load1.toFixed(2);
 
-  renderSpark("sparkCpu", history.cpu, { min: 0, max: 100 });
-  renderSpark("sparkMem", history.mem, { min: 0, max: 100 });
-  renderSpark("sparkDisk", history.disk, { min: 0, max: 100 });
+  renderSpark("sparkCpu", "sparkCpuFill", history.cpu, { min: 0, max: 100 });
+  renderSpark("sparkMem", "sparkMemFill", history.mem, { min: 0, max: 100 });
+  renderSpark("sparkDisk", "sparkDiskFill", history.disk, { min: 0, max: 100 });
   const loadMax = Math.max(1, ...history.load);
-  renderSpark("sparkLoad", history.load, { min: 0, max: loadMax });
+  renderSpark("sparkLoad", "sparkLoadFill", history.load, { min: 0, max: loadMax });
 
   const perfMeta = document.getElementById("perfMeta");
   const t = data?.local_time_iso ? new Date(String(data.local_time_iso)) : new Date();
@@ -221,7 +237,7 @@ function projectCard(project) {
         <button class="btn btn--small" data-action="git_pull" ${disabledGit}>Git Pull</button>
         <button class="btn btn--small" data-action="list_files">Files</button>
         <button class="btn btn--small" data-action="view_logs">View Logs</button>
-        <button class="btn btn--small" data-action="terminal">Terminal</button>
+        <button class="btn btn--small btn--primary" data-action="terminal">Terminal</button>
       </div>
     </div>
   `;
@@ -373,4 +389,3 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadSystem().catch(() => {});
   }, 5000);
 });
-

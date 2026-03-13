@@ -16,14 +16,23 @@
         }
       })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/styles.css" />
     <script src="/login.js" defer></script>
   </head>
   <body class="page page--auth">
     <div class="auth-wrap">
       <div class="card auth-card">
-        <h1 class="brand">Homelab Dashboard</h1>
-        <p class="muted">Sign in to your dashboard.</p>
+        <h1 class="lbrand">
+          <span class="lbrand-icon" aria-hidden="true"></span>
+          <span>Homelab</span>
+        </h1>
+        <p class="lsub muted">Sign in to your dashboard.</p>
 
         <form id="loginForm" class="form">
           <label class="label">

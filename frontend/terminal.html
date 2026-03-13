@@ -16,6 +16,12 @@
         }
       })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
     <link rel="stylesheet" href="/styles.css" />
     <script src="/vendor/xterm/xterm.min.js" defer></script>
@@ -25,7 +31,10 @@
   <body class="page page--terminal">
     <header class="topbar">
       <div class="topbar__left">
-        <a class="brand" href="/">Homelab Dashboard</a>
+        <a class="brand" href="/">
+          <span class="brand-icon" aria-hidden="true"></span>
+          <span>Homelab</span>
+        </a>
         <nav class="nav" aria-label="Primary">
           <a class="navlink" href="/">Dashboard</a>
           <a class="navlink navlink--active" href="/terminal">Terminal</a>
@@ -50,7 +59,19 @@
     </header>
 
     <main class="terminal-layout">
-      <div id="termContainer" class="terminal terminal--full"></div>
+      <section class="terminal-shell terminal--full">
+        <div class="terminal-chrome">
+          <div class="terminal-dots" aria-hidden="true">
+            <span class="tdot tdot--red"></span>
+            <span class="tdot tdot--amber"></span>
+            <span class="tdot tdot--green"></span>
+          </div>
+          <div class="terminal-title">bash</div>
+        </div>
+        <div class="terminal-body">
+          <div id="termContainer" class="terminal"></div>
+        </div>
+      </section>
     </main>
   </body>
 </html>

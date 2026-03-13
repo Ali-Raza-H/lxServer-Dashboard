@@ -16,13 +16,22 @@
         }
       })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/styles.css" />
     <script src="/app.js" defer></script>
   </head>
   <body class="page">
     <header class="topbar">
       <div class="topbar__left">
-        <a class="brand" href="/">Homelab Dashboard</a>
+        <a class="brand" href="/">
+          <span class="brand-icon" aria-hidden="true"></span>
+          <span>Homelab</span>
+        </a>
         <nav class="nav" aria-label="Primary">
           <a class="navlink navlink--active" href="/">Dashboard</a>
           <a class="navlink" href="/terminal">Terminal</a>
@@ -48,7 +57,7 @@
       <aside class="side">
         <div class="panel">
           <div class="panel__head">
-            <h3>System Performance</h3>
+            <h3><span class="status-dot"></span>System Performance</h3>
             <div class="muted" id="perfMeta"></div>
           </div>
           <div class="metrics">
@@ -59,6 +68,7 @@
               </div>
               <div class="metric-sub muted" id="metricCpuSub">Usage</div>
               <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkCpuFill" class="sparkline__fill" d="" />
                 <path id="sparkCpu" d="" />
               </svg>
             </div>
@@ -70,6 +80,7 @@
               </div>
               <div class="metric-sub muted" id="metricMemSub">-- / --</div>
               <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkMemFill" class="sparkline__fill" d="" />
                 <path id="sparkMem" d="" />
               </svg>
             </div>
@@ -81,6 +92,7 @@
               </div>
               <div class="metric-sub muted" id="metricDiskSub">-- / --</div>
               <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkDiskFill" class="sparkline__fill" d="" />
                 <path id="sparkDisk" d="" />
               </svg>
             </div>
@@ -92,18 +104,19 @@
               </div>
               <div class="metric-sub muted" id="metricLoadSub">1m average</div>
               <svg class="sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                <path id="sparkLoadFill" class="sparkline__fill" d="" />
                 <path id="sparkLoad" d="" />
               </svg>
             </div>
           </div>
         </div>
 
-        <div class="panel">
+        <div class="panel" id="outputPanel">
           <div class="panel__head">
             <h3>Output</h3>
             <div class="muted" id="outputMeta"></div>
           </div>
-          <pre id="outputPre" class="pre"></pre>
+          <pre id="outputPre" class="pre pre--out pre--empty"></pre>
         </div>
 
         <div class="panel">
@@ -111,7 +124,7 @@
             <h3>Logs</h3>
             <div class="log-actions">
               <button id="logsTailBtn" class="btn btn--small">Tail</button>
-              <button id="logsLiveBtn" class="btn btn--small">Live</button>
+              <button id="logsLiveBtn" class="btn btn--small btn--primary">Live</button>
               <button id="logsStopBtn" class="btn btn--small btn--danger" disabled>Stop</button>
             </div>
           </div>
